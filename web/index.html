@@ -28,10 +28,16 @@
             </form>
         </details>
 
+        <div class="portrait-toolbar">
+            <p id="portrait-status" class="muted">读取状态栏立绘索引</p>
+            <button id="sync-portraits" type="button" class="secondary">同步状态栏立绘</button>
+        </div>
+
         <div class="columns">
             <section class="panel composer" aria-labelledby="compose-title">
                 <div class="section-head"><span class="step">01</span><h2 id="compose-title">创建批次</h2></div>
                 <label class="stack">主题 <select id="theme"></select></label>
+                <label id="reference-default-label" class="stack">整批参考图类型 <select id="reference-default"></select></label>
                 <label class="stack">搜索角色 <input id="search" placeholder="输入姓名或别名" type="search"></label>
                 <div id="role-list" class="role-list" aria-label="角色列表"></div>
                 <form id="name-form" class="inline">
@@ -65,7 +71,7 @@
             <form id="theme-form" class="stack">
                 <label class="stack">名称 <input name="name" required maxlength="80" placeholder="例如雨夜巡城"></label>
                 <label class="stack">参考图 <select name="reference">
-                    <option value="none">无需参考图</option><option value="optional">可选</option><option value="required">必需</option>
+                    <option value="optional">可选（默认常态立绘）</option><option value="required">必需</option><option value="none">不使用参考图</option>
                 </select></label>
                 <label class="stack">主题提示词 <textarea name="prompt" rows="7" required maxlength="30000"
                     placeholder="可以使用 {{角色名}}、{{角色设定}}、{{世界观}}、{{主题身份}}、{{补充要求}}"></textarea></label>

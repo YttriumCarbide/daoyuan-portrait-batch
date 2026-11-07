@@ -1,6 +1,11 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { home, idFor, imageExtension, readJson, writeAtomic, writeJson } from './storage.mjs';
+import { home, idFor, readJson, writeJson } from './storage.mjs';
+import { downloadImage } from './remote-image.mjs';
+import {
+    chooseReference, defaultReferenceType, loadReferenceImage, loadReferences, referenceTypes,
+    resolveReferenceType, roleReferenceTypes, storeReference,
+} from './references.mjs';
 
 const libraryPath = join(home, 'library.json');
 const themesDir = join(home, 'themes');
@@ -56,7 +61,7 @@ function workshopThemes(workshop) {
             aliases: label !== name ? [label] : [],
             source: '工坊',
             prompt: entry.content,
-            reference: /^真人/u.test(name) ? 'required' : 'none',
+            reference: /^真人/u.test(name) ? 'required' : 'optional',
             identities: /魔法学院/u.test(name) ? identities : [],
         };
     });
@@ -83,10 +88,12 @@ export async function loadLibrary() {
     });
     const custom = await Promise.all(names.filter(name => /^custom-[a-f0-9]{16}\.json$/.test(name))
         .sort().map(name => readJson(join(themesDir, name))));
-    return { ...library, themes: [...library.themes, ...custom] };
+    const workshop = library.themes.map(theme => theme.reference === 'none' && theme.source === '工坊'
+        ? { ...theme, reference: 'optional' } : theme);
+    return { ...library, themes: [...workshop, ...custom] };
 }
 
-export async function saveTheme({ name, prompt, reference = 'none' } = {}) {
+export async function saveTheme({ name, prompt, reference = 'optional' } = {}) {
     name = typeof name === 'string' ? name.trim() : '';
     prompt = typeof prompt === 'string' ? prompt.trim() : '';
     if (!name || name.length > 80 || !prompt || prompt.length > 30000) {
@@ -115,26 +122,35 @@ export function findNamed(items, value, type) {
 export async function bindReference(role, image) {
     const { roles } = await loadLibrary();
     const item = findNamed(roles, role, '角色');
-    const extension = imageExtension(image);
-    await writeAtomic(join(home, 'references', item.id), image);
-    return { id: item.id, name: item.name, extension };
+    return storeReference(item, image);
 }
 
-export function readReference(id) {
-    return readFile(join(home, 'references', id)).catch(error => {
-        if (error.code === 'ENOENT') return null;
-        throw error;
-    });
+export async function bindReferenceUrl(role, url) {
+    const { roles } = await loadLibrary();
+    const item = findNamed(roles, role, '角色');
+    return storeReference(item, await downloadImage(url));
+}
+
+export async function viewReference(role, type = defaultReferenceType) {
+    const [{ roles }, state] = await Promise.all([loadLibrary(), loadReferences()]);
+    const item = findNamed(roles, role, '角色');
+    const choice = chooseReference(item, state, resolveReferenceType(state, type), true);
+    if (!choice) throw new Error('「' + item.name + '」没有此类型的参考图。');
+    return { ...await loadReferenceImage(choice), name: item.name, type: choice.type };
 }
 
 export async function librarySummary() {
-    const { roles, themes } = await loadLibrary();
-    const refs = new Set(await readdir(join(home, 'references')).catch(error => {
-        if (error.code === 'ENOENT') return [];
-        throw error;
+    const [{ roles, themes }, state] = await Promise.all([loadLibrary(), loadReferences()]);
+    const roster = roles.map(({ id, name, aliases, source }) => ({
+        id, name, aliases, source, references: roleReferenceTypes({ id, name, aliases }, state),
     }));
     return {
-        roles: roles.map(({ id, name, aliases, source }) => ({ id, name, aliases, source, hasReference: refs.has(id) })),
+        roles: roster,
+        referenceTypes: referenceTypes(state),
+        portraitSync: {
+            syncedAt: state.syncedAt,
+            matched: roster.filter(role => role.references.some(ref => ref.type !== 'custom')).length,
+        },
         themes: themes.map(({ id, name, source, reference, identities }) => ({
             id, name, source, reference, identities: identities.map(identity => identity.name),
         })),

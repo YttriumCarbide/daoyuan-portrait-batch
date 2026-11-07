@@ -1,7 +1,8 @@
 const $ = id => document.getElementById(id);
 const selected = new Set();
 const identities = new Map();
-let library = { roles: [], themes: [], provider: false };
+const roleReferences = new Map();
+let library = { roles: [], themes: [], referenceTypes: [], provider: false };
 let visibleBatch = null;
 let batchPoll;
 
@@ -17,13 +18,16 @@ function notice(text, isError = false) {
     $('notice').classList.toggle('error', isError);
 }
 
-async function api(path, data) {
+async function request(path, data) {
     const response = await fetch('/api/' + path, data === undefined ? undefined : {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
     });
-    const value = await response.json();
-    if (!response.ok) throw new Error(value.error ?? '请求失败。');
-    return value;
+    if (!response.ok) throw new Error((await response.json()).error ?? '请求失败。');
+    return response;
+}
+
+async function api(path, data) {
+    return (await request(path, data)).json();
 }
 
 function handle(action) {
@@ -67,6 +71,7 @@ function renderRoles() {
             else {
                 selected.delete(role.id);
                 identities.delete(role.id);
+                roleReferences.delete(role.id);
             }
             renderSelected();
         });
@@ -98,6 +103,90 @@ function imageInput(label, action) {
     return container;
 }
 
+function referenceName(type) {
+    return library.referenceTypes.find(item => item.id === type)?.name ?? type;
+}
+
+function renderDefaultReference(theme) {
+    const select = $('reference-default');
+    const previous = select.value;
+    const types = library.referenceTypes.filter(type => theme?.reference !== 'required' || type.id !== 'none');
+    select.replaceChildren(...types.map(type => option(type.id, type.name)));
+    select.value = types.some(type => type.id === previous) ? previous : 'default';
+    $('reference-default-label').hidden = !theme || theme.reference === 'none';
+}
+
+async function previewReference(target, role, type) {
+    target.replaceChildren(node('p', '正在下载预览…', 'muted'));
+    try {
+        const response = await request('reference-image', { role, type });
+        const url = URL.createObjectURL(await response.blob());
+        const image = node('img');
+        image.alt = '人物参考图';
+        image.addEventListener('load', () => URL.revokeObjectURL(url), { once: true });
+        image.addEventListener('error', () => URL.revokeObjectURL(url), { once: true });
+        image.src = url;
+        target.replaceChildren(image);
+    } catch (error) {
+        target.replaceChildren(node('p', error.message, 'warning'));
+    }
+}
+
+function renderRoleReference(role, theme) {
+    const id = role.id;
+    const row = node('div', undefined, 'reference-row');
+    const choices = role.references;
+    const select = node('select');
+    select.setAttribute('aria-label', role.name + '的参考图类型');
+    const batchType = $('reference-default').value;
+    select.append(option('', '跟随整批（' + referenceName(batchType) + '）'));
+    for (const { type, count } of choices) {
+        select.append(option(type, referenceName(type) + (count > 1 ? ' · ' + count + ' 张' : '')));
+    }
+    if (theme.reference !== 'required') select.append(option('none', '不使用参考图'));
+    const override = roleReferences.get(id);
+    select.value = [...select.options].some(item => item.value === override) ? override : '';
+    select.addEventListener('change', () => {
+        if (select.value) roleReferences.set(id, select.value);
+        else roleReferences.delete(id);
+        renderSelected();
+    });
+    let type = select.value || batchType;
+    const hasType = name => choices.some(choice => choice.type === name);
+    if (!select.value && type === 'default' && !hasType(type) && hasType('custom')) type = 'custom';
+    row.append(select);
+    const preview = node('div', undefined, 'reference-preview');
+    if (hasType(type)) {
+        const button = node('button', '预览' + referenceName(type), 'text-button');
+        button.type = 'button';
+        button.addEventListener('click', handle(() => previewReference(preview, id, type)));
+        row.append(button);
+    } else if (type !== 'none') {
+        row.append(node('span', '缺少' + referenceName(type), theme.reference === 'required' ? 'warning' : 'muted'));
+    }
+    const add = node('details', undefined, 'reference-tools');
+    const saved = async data => {
+        await api('reference', { role: id, ...data });
+        if (selected.has(id)) roleReferences.set(id, 'custom');
+        await refreshLibrary();
+        notice('已下载或导入 ' + role.name + ' 的自定义参考图，可点击预览。');
+    };
+    const form = node('form');
+    const url = node('input');
+    url.type = 'url';
+    url.required = true;
+    url.placeholder = '粘贴 HTTPS 图片 URL';
+    url.setAttribute('aria-label', role.name + '的参考图 URL');
+    const save = node('button', '下载并绑定', 'secondary');
+    save.type = 'submit';
+    form.append(url, save);
+    form.addEventListener('submit', handle(() => saved({ url: url.value.trim() })));
+    add.append(node('summary', hasType('custom') ? '更换自定义参考图' : '添加参考图'),
+        form, imageInput('或选择本地图片', image => saved({ image })));
+    row.append(add, preview);
+    return row;
+}
+
 function renderSelected() {
     const theme = library.themes.find(item => item.id === $('theme').value);
     const byId = new Map(library.roles.map(role => [role.id, role]));
@@ -118,25 +207,18 @@ function renderSelected() {
             });
             row.append(select);
         }
-        if (theme && theme.reference !== 'none') {
-            const label = role.hasReference ? '换参考图' : (theme.reference === 'required' ? '绑定参考图（必需）' : '绑定参考图');
-            row.append(imageInput(label, async image => {
-                await api('reference', { role: id, image });
-                role.hasReference = true;
-                renderSelected();
-                notice('已保存 ' + role.name + ' 的参考图。');
-            }));
-        }
         const remove = node('button', '移除', 'text-button');
         remove.type = 'button';
         remove.setAttribute('aria-label', '移除 ' + role.name);
         remove.addEventListener('click', () => {
             selected.delete(id);
             identities.delete(id);
+            roleReferences.delete(id);
             renderRoles();
             renderSelected();
         });
         row.append(remove);
+        if (theme && theme.reference !== 'none') row.append(renderRoleReference(role, theme));
         return row;
     }));
 }
@@ -147,11 +229,24 @@ async function refreshLibrary(themeId = $('theme').value) {
         if (!library.roles.some(role => role.id === id)) {
             selected.delete(id);
             identities.delete(id);
+            roleReferences.delete(id);
         }
     }
     $('theme').replaceChildren(...library.themes.map(theme => option(theme.id, theme.name + ' · ' + theme.source)));
     if (!library.themes.length) $('theme').append(option('', '请先导入世界书'));
     if (library.themes.some(theme => theme.id === themeId)) $('theme').value = themeId;
+    const theme = library.themes.find(item => item.id === $('theme').value);
+    for (const [id, type] of roleReferences) {
+        const role = library.roles.find(item => item.id === id);
+        if (type === 'none' ? theme?.reference === 'required' : !role?.references.some(item => item.type === type)) {
+            roleReferences.delete(id);
+        }
+    }
+    renderDefaultReference(theme);
+    const { syncedAt, matched } = library.portraitSync;
+    $('portrait-status').textContent = syncedAt
+        ? '状态栏立绘已匹配 ' + matched + ' / ' + library.roles.length + ' 位角色'
+        : '尚未同步状态栏立绘，可先导入自己的参考图。';
     $('library-count').textContent = library.roles.length + ' 人 · ' + library.themes.length + ' 个主题';
     $('mode').textContent = library.provider ? '已配置生图服务' : 'Codex 生图模式';
     $('queue').textContent = library.provider ? '创建并开始生图' : '创建批次';
@@ -160,13 +255,18 @@ async function refreshLibrary(themeId = $('theme').value) {
 }
 
 function composition() {
-    return { theme: $('theme').value, roles: [...selected], brief: $('brief').value, identities: Object.fromEntries(identities) };
+    return {
+        theme: $('theme').value, roles: [...selected], brief: $('brief').value, identities: Object.fromEntries(identities),
+        referenceType: $('reference-default').value || 'default', roleReferences: Object.fromEntries(roleReferences),
+    };
 }
 
 function showPrompts(data) {
     $('prompts').replaceChildren(...data.jobs.map(job => {
         const detail = node('details');
-        const title = job.name + (job.identity ? ' · ' + job.identity : '') + (job.missingReference ? ' · 缺参考图' : '');
+        const reference = job.referenceType === 'none' ? '' :
+            ' · ' + (job.referenceUnavailable ? '缺少' : '') + referenceName(job.referenceType);
+        const title = job.name + (job.identity ? ' · ' + job.identity : '') + reference;
         detail.append(node('summary', title, job.missingReference ? 'warning' : ''), node('pre', job.prompt));
         return detail;
     }));
@@ -212,6 +312,9 @@ async function refreshBatch() {
     $('job-list').replaceChildren(...batch.jobs.map(job => {
         const card = node('article', undefined, 'job');
         card.append(node('strong', job.name + (job.identity ? ' · ' + job.identity : '')), node('small', names[job.status]));
+        if (job.referenceType && job.referenceType !== 'none') {
+            card.append(node('small', (job.referenceUnavailable ? '缺少参考图 · ' : '参考图 · ') + referenceName(job.referenceType)));
+        }
         if (job.error) card.append(node('p', job.error, 'warning'));
         const actions = node('div', undefined, 'actions');
         if (job.imagePath) {
@@ -279,11 +382,29 @@ $('name-form').addEventListener('submit', handle(async () => {
 
 $('search').addEventListener('input', renderRoles);
 $('brief').addEventListener('input', () => $('prompts').replaceChildren());
-$('theme').addEventListener('change', () => { identities.clear(); renderSelected(); });
-$('clear').addEventListener('click', () => { selected.clear(); identities.clear(); renderRoles(); renderSelected(); });
+$('theme').addEventListener('change', () => {
+    identities.clear();
+    const theme = library.themes.find(item => item.id === $('theme').value);
+    if (theme?.reference === 'required') {
+        for (const [id, type] of roleReferences) if (type === 'none') roleReferences.delete(id);
+    }
+    renderDefaultReference(theme);
+    renderSelected();
+});
+$('reference-default').addEventListener('change', renderSelected);
+$('sync-portraits').addEventListener('click', handle(async () => {
+    notice('正在同步状态栏立绘索引…');
+    const result = await api('portrait-sync', {});
+    await refreshLibrary();
+    notice('已同步状态栏立绘，匹配到 ' + result.matched + ' 位角色。');
+}));
+$('clear').addEventListener('click', () => {
+    selected.clear(); identities.clear(); roleReferences.clear(); renderRoles(); renderSelected();
+});
 $('batch').addEventListener('change', handle(refreshBatch));
 $('preview').addEventListener('click', handle(async () => showPrompts(await api('preview', composition()))));
 $('queue').addEventListener('click', handle(async () => {
+    notice('正在准备批次并下载所选参考图…');
     const batch = await api('queue', composition());
     await refreshBatches(batch.id);
     if (library.provider) {

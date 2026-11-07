@@ -2,9 +2,10 @@ import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
-import { bindReference, importBooks, librarySummary, saveTheme } from './library.mjs';
+import { bindReference, bindReferenceUrl, importBooks, librarySummary, saveTheme, viewReference } from './library.mjs';
 import { createBatch, listBatches, preview, recordJob, runJob, showBatch } from './jobs.mjs';
 import { imageConfig, imageGenerator } from './image-api.mjs';
+import { syncPortraits } from './references.mjs';
 
 const staticFiles = {
     '/': ['index.html', 'text/html; charset=utf-8'],
@@ -19,7 +20,7 @@ function send(res, status, type, body) {
         'Content-Type': type,
         'X-Content-Type-Options': 'nosniff',
         'Cache-Control': 'no-store',
-        'Content-Security-Policy': "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+        'Content-Security-Policy': "default-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
     });
     res.end(body);
 }
@@ -90,8 +91,16 @@ export function serve(input = '8765', { open = false } = {}) {
                     return json(res, 200, await importBooks(body.world, body.workshop));
                 case '/api/theme':
                     return json(res, 200, await saveTheme(body));
+                case '/api/portrait-sync':
+                    await syncPortraits();
+                    return json(res, 200, (await librarySummary()).portraitSync);
                 case '/api/reference':
-                    return json(res, 200, await bindReference(body.role, readImage(body.image)));
+                    return json(res, 200, body.url ? await bindReferenceUrl(body.role, body.url)
+                        : await bindReference(body.role, readImage(body.image)));
+                case '/api/reference-image': {
+                    const image = await viewReference(body.role, body.type);
+                    return send(res, 200, imageTypes['.' + image.extension], image.bytes);
+                }
                 case '/api/preview':
                     return json(res, 200, await preview(body));
                 case '/api/queue':

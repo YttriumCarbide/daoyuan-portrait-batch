@@ -29,6 +29,7 @@ h2 { font-size: 1.25rem; }
 .section-head, .inline, .actions, .fields, .selected-head { display: flex; align-items: center; gap: 10px; }
 .section-head { margin-bottom: 17px; }
 .actions, .fields { flex-wrap: wrap; }
+.portrait-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 12px; font-size: .88rem; }
 .fields { margin-top: 15px; }
 .fields label { min-width: 0; flex: 1 1 220px; }
 .stack { display: grid; gap: 6px; margin: 0 0 11px; }
@@ -53,6 +54,13 @@ button:disabled { opacity: .48; cursor: default; }
 .selection { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 6px 8px; background: var(--green-light); border-radius: 7px; }
 .selection select { width: auto; max-width: 100%; padding: 4px; }
 .selection button { margin-left: auto; }
+.reference-row, .reference-preview, .reference-tools { width: 100%; }
+.reference-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: .86rem; }
+.reference-row button, .reference-tools button { margin-left: 0; }
+.reference-preview:empty { display: none; }
+.reference-preview img { display: block; max-width: 100%; max-height: 260px; border-radius: 5px; }
+.reference-tools form { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.reference-tools form input { flex: 1 1 160px; min-width: 0; }
 .upload { color: var(--green); font-size: .84rem; text-decoration: underline; cursor: pointer; }
 .upload input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .upload:focus-within { outline: 2px solid var(--green); }

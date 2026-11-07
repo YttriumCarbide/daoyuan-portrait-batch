@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -110,4 +111,36 @@ test('九人批次、工坊身份、主题新增、参考图、失败重试与�
         await next;
     }
     assert.equal((await showBatch(batch.id)).jobs[1].status, 'done');
+
+    const { parsePortraitIndex } = await import('../src/references.mjs');
+    const { downloadImage } = await import('../src/remote-image.mjs');
+    const { writeAtomic, writeJson } = await import('../src/storage.mjs');
+    const normalUrl = 'https://example.com/normal.png';
+    const specialUrl = 'https://example.com/special.png';
+    const portraits = parsePortraitIndex({ schemaVersion: 2, data: { entities: {
+        [characters[0]]: { type: 'character', images: [{ theme: 'normal', url: normalUrl }, { theme: 'special', url: specialUrl }] },
+        '别名2': { type: 'character', images: [{ theme: 'default', url: normalUrl }] },
+        '门派': { type: 'sect', images: [{ theme: 'default', url: normalUrl }] },
+    } } });
+    await writeJson(join(home, 'portraits.json'), { portraits, syncedAt: new Date().toISOString() });
+    for (const url of [normalUrl, specialUrl]) {
+        await writeAtomic(join(home, 'portrait-cache', createHash('sha256').update(url).digest('hex')), png);
+    }
+    assert.equal((await librarySummary()).portraitSync.matched, 2);
+    const mixed = {
+        theme: '魔法学院', roles: characters.slice(0, 3), referenceType: '常态立绘',
+        roleReferences: { [characters[0]]: '心动立绘' },
+    };
+    const draftWithRefs = await preview(mixed);
+    assert.deepEqual(draftWithRefs.jobs.map(job => [job.referenceType, job.hasReference]), [
+        ['special', true], ['default', true], ['default', false],
+    ]);
+    const copied = await createBatch(mixed);
+    assert.deepEqual(await readFile(copied.jobs[0].referencePath), png);
+    assert.equal(copied.jobs[2].referenceUnavailable, true);
+    const disabled = await preview({ ...mixed, referenceType: '不使用参考图', roleReferences: {} });
+    assert.ok(disabled.jobs.every(job => !job.hasReference && !job.referenceUnavailable));
+    await assert.rejects(downloadImage('https://127.0.0.1/test.png'), /本机或内网/u);
+    await assert.rejects(downloadImage('https://[::ffff:127.0.0.1]/test.png'), /本机或内网/u);
+    await assert.rejects(downloadImage('file:///test.png'), /HTTPS/u);
 });

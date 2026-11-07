@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { findNamed, loadLibrary, readReference } from './library.mjs';
+import { findNamed, loadLibrary } from './library.mjs';
+import {
+    chooseReference, defaultReferenceType, loadReferenceImage, loadReferences, referenceLabel, resolveReferenceType,
+} from './references.mjs';
 import { home, imageExtension, readJson, writeAtomic, writeJson } from './storage.mjs';
 
 const batchesDir = join(home, 'batches');
@@ -12,7 +15,7 @@ function batchDir(id) {
     return join(batchesDir, id);
 }
 
-function renderPrompt({ theme, role, lore, identity, brief }) {
+function renderPrompt({ theme, role, lore, identity, brief, reference }) {
     const identityText = identity?.content ?? (theme.identities.length
         ? '按角色原设选择一个最适合的学院身份。可选身份：' + theme.identities.map(item => item.name).join('、') + '。'
         : '');
@@ -44,15 +47,19 @@ function renderPrompt({ theme, role, lore, identity, brief }) {
         !used.has('角色设定') && '## 角色设定 · ' + role.name + '\n' + role.content,
         identityText && !used.has('主题身份') && '## 本次身份\n' + identityText,
         brief && !used.has('补充要求') && '## 本批补充要求\n' + brief,
+        reference && '## 人物参考图\n参考图用于保持角色辨识特征。服装、场景和画风按本次主题处理；主题已有参考图规则时按其规定执行。',
     ];
     return sections.filter(Boolean).join('\n\n');
 }
 
-async function plan({ theme, roles, brief = '', identities = {} } = {}) {
+async function plan({ theme, roles, brief = '', identities = {}, referenceType = defaultReferenceType, roleReferences = {} } = {}) {
     if (!Array.isArray(roles) || roles.length === 0 || roles.length > 250) throw new Error('请选择 1 至 250 个角色。');
     if (typeof brief !== 'string' || brief.length > 3000) throw new Error('补充要求最多 3000 字。');
     if (!identities || typeof identities !== 'object' || Array.isArray(identities)) throw new Error('角色身份设置无效。');
-    const library = await loadLibrary();
+    if (!roleReferences || typeof roleReferences !== 'object' || Array.isArray(roleReferences)) {
+        throw new Error('角色参考图设置无效。');
+    }
+    const [library, refs] = await Promise.all([loadLibrary(), loadReferences()]);
     const template = findNamed(library.themes, theme, '主题');
     const selected = [...new Map(roles.map(name => {
         const role = findNamed(library.roles, name, '角色');
@@ -61,16 +68,23 @@ async function plan({ theme, roles, brief = '', identities = {} } = {}) {
     const assigned = new Map(Object.entries(identities).filter(([, identity]) => identity).map(([name, identity]) => [
         findNamed(selected, name, '已选角色').id, findNamed(template.identities, identity, '学院身份'),
     ]));
+    const batchType = resolveReferenceType(refs, referenceType);
+    const overrides = new Map(Object.entries(roleReferences).map(([name, type]) => [
+        findNamed(selected, name, '已选角色').id, resolveReferenceType(refs, type),
+    ]));
     const items = [];
     for (const role of selected) {
         const identity = assigned.get(role.id);
-        const reference = template.reference === 'none' ? null : await readReference(role.id);
+        const type = template.reference === 'none' ? 'none' : overrides.get(role.id) ?? batchType;
+        const reference = chooseReference(role, refs, type, !overrides.has(role.id));
         items.push({
             id: role.id,
             name: role.name,
             identity: identity?.name ?? null,
-            prompt: renderPrompt({ theme: template, role, lore: library.lore, identity, brief: brief.trim() }),
+            prompt: renderPrompt({ theme: template, role, lore: library.lore, identity, brief: brief.trim(), reference }),
             reference,
+            referenceType: reference?.type ?? type,
+            referenceUnavailable: type !== 'none' && !reference,
             missingReference: template.reference === 'required' && !reference,
         });
     }
@@ -85,7 +99,7 @@ export async function preview(options) {
 export async function createBatch(options) {
     const { theme, items } = await plan(options);
     const missing = items.filter(item => item.missingReference).map(item => item.name);
-    if (missing.length) throw new Error('该主题需要先绑定参考图：' + missing.join('、'));
+    if (missing.length) throw new Error('该主题需要参考图，请调整类型或补图：' + missing.join('、'));
     const created = new Date();
     const id = created.toISOString().slice(0, 10).replaceAll('-', '') + '-' + randomUUID().replaceAll('-', '').slice(0, 12);
     const path = batchDir(id);
@@ -94,12 +108,27 @@ export async function createBatch(options) {
     await mkdir(temp);
     try {
         const jobs = [];
-        for (const item of items) {
-            const dir = join(temp, item.id);
-            await writeAtomic(join(dir, 'prompt.md'), item.prompt + '\n');
-            const referenceFile = item.reference ? 'reference.' + imageExtension(item.reference) : null;
-            if (referenceFile) await writeAtomic(join(dir, referenceFile), item.reference);
-            jobs.push({ id: item.id, name: item.name, identity: item.identity, referenceFile });
+        for (let index = 0; index < items.length; index += 4) {
+            const results = await Promise.allSettled(items.slice(index, index + 4).map(async item => {
+                const dir = join(temp, item.id);
+                await writeAtomic(join(dir, 'prompt.md'), item.prompt + '\n');
+                let image;
+                if (item.reference) {
+                    try { image = await loadReferenceImage(item.reference); } catch (error) {
+                        throw new Error('「' + item.name + '」的' + referenceLabel(item.referenceType) + '下载失败：' + error.message);
+                    }
+                }
+                const referenceFile = image ? 'reference.' + image.extension : null;
+                if (referenceFile) await writeAtomic(join(dir, referenceFile), image.bytes);
+                return {
+                    id: item.id, name: item.name, identity: item.identity, referenceFile,
+                    referenceType: item.referenceType, referenceUnavailable: item.referenceUnavailable,
+                };
+            }));
+            for (const result of results) {
+                if (result.status === 'rejected') throw result.reason;
+                jobs.push(result.value);
+            }
         }
         await writeJson(join(temp, 'batch.json'), { id, created: created.toISOString(), theme, jobs });
         await rename(temp, path);

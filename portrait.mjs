@@ -1,9 +1,10 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { bindReference, importBooks, librarySummary, loadLibrary, saveTheme } from './src/library.mjs';
+import { bindReference, bindReferenceUrl, importBooks, librarySummary, loadLibrary, saveTheme, viewReference } from './src/library.mjs';
 import { createBatch, listBatches, preview, recordJob, runJob, showBatch } from './src/jobs.mjs';
 import { imageConfig, imageGenerator } from './src/image-api.mjs';
+import { syncPortraits } from './src/references.mjs';
 import { readJson } from './src/storage.mjs';
 import { serve } from './src/server.mjs';
 
@@ -12,9 +13,11 @@ const help = [
     'node portrait.mjs import --worlds <SillyTavern/data/default-user/worlds>',
     'node portrait.mjs import --world <本体.json> --workshop <工坊.json>',
     'node portrait.mjs library | themes | batches',
-    'node portrait.mjs reference <角色名> --image <参考图>',
+    'node portrait.mjs portraits sync   同步道渊状态栏立绘索引',
+    'node portrait.mjs reference <角色名> --image <本地图片> | --url <HTTPS图片URL> | --type <类型>',
     'node portrait.mjs theme add --name <新主题> --file <提示词.md> [--reference none|optional|required]',
     'node portrait.mjs preview|queue --theme <主题> --role <姓名> [--role <姓名>] [--identity <角色=身份>] [--brief <要求>]',
+    '    [--ref-type <整批参考图类型>] [--role-ref <角色=类型>]',
     'node portrait.mjs show <批次ID>',
     'node portrait.mjs run <批次ID> [--role <姓名>]   使用已配置的生图服务',
     'node portrait.mjs complete <批次ID> <姓名或任务ID> --image <成图>',
@@ -22,11 +25,12 @@ const help = [
 ].join('\n');
 
 const options = Object.fromEntries(
-    ['port', 'worlds', 'world', 'workshop', 'image', 'name', 'file', 'reference', 'theme', 'brief', 'error']
+    ['port', 'worlds', 'world', 'workshop', 'image', 'url', 'type', 'ref-type', 'name', 'file', 'reference', 'theme', 'brief', 'error']
         .map(key => [key, { type: 'string' }]),
 );
 options.role = { type: 'string', multiple: true };
 options.identity = { type: 'string', multiple: true };
+options['role-ref'] = { type: 'string', multiple: true };
 options.open = { type: 'boolean' };
 
 function required(value, label) {
@@ -47,17 +51,22 @@ async function bookPaths(values) {
     return [world, workshop[0]].map(name => join(values.worlds, name));
 }
 
-function queueOptions(values) {
-    const identities = Object.fromEntries((values.identity ?? []).map(pair => {
+function assignments(values, usage) {
+    return Object.fromEntries((values ?? []).map(pair => {
         const index = pair.indexOf('=');
-        if (index < 1 || !pair.slice(index + 1).trim()) throw new Error('--identity 使用「角色=身份」格式。');
+        if (index < 1 || !pair.slice(index + 1).trim()) throw new Error(usage);
         return [pair.slice(0, index).trim(), pair.slice(index + 1).trim()];
     }));
+}
+
+function queueOptions(values) {
     return {
         theme: required(values.theme, '--theme'),
         roles: (values.role ?? []).flatMap(names => names.split(/[、,，\n]+/u)).map(name => name.trim()).filter(Boolean),
         brief: values.brief,
-        identities,
+        identities: assignments(values.identity, '--identity 使用「角色=身份」格式。'),
+        referenceType: values['ref-type'],
+        roleReferences: assignments(values['role-ref'], '--role-ref 使用「角色=类型」格式。'),
     };
 }
 
@@ -76,8 +85,21 @@ async function main() {
             return librarySummary();
         case 'themes':
             return (await loadLibrary()).themes;
-        case 'reference':
-            return bindReference(required(first, '角色名'), await readFile(required(values.image, '--image')));
+        case 'portraits': {
+            if (first !== 'sync') throw new Error('请使用 portraits sync。');
+            await syncPortraits();
+            return (await librarySummary()).portraitSync;
+        }
+        case 'reference': {
+            const role = required(first, '角色名');
+            if ([values.image, values.url, values.type].filter(Boolean).length > 1) {
+                throw new Error('--image、--url、--type 请选一项。');
+            }
+            if (values.image) return bindReference(role, await readFile(values.image));
+            if (values.url) return bindReferenceUrl(role, values.url);
+            const { bytes, ...image } = await viewReference(role, values.type);
+            return image;
+        }
         case 'theme':
             if (first !== 'add') throw new Error('请使用 theme add。');
             return saveTheme({ name: values.name, prompt: await readFile(required(values.file, '--file'), 'utf8'), reference: values.reference });
