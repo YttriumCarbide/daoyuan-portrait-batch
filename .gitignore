@@ -1,0 +1,4 @@
+/.portrait/
+/node_modules/
+/.env*
+/*.local.json

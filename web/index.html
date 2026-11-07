@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>道渊批量立绘</title>
+    <link rel="stylesheet" href="/style.css">
+    <script src="/app.js" type="module"></script>
+</head>
+<body>
+    <main>
+        <header class="masthead">
+            <div>
+                <p class="eyebrow">DAOYUAN PORTRAITS</p>
+                <h1>道渊批量立绘</h1>
+                <p class="subtitle">为道渊角色批量生成同一主题的立绘。</p>
+            </div>
+            <span id="mode" class="badge">读取中</span>
+        </header>
+        <p id="notice" role="status" aria-live="polite"></p>
+
+        <details id="import-panel" class="panel">
+            <summary>导入世界书 <span id="library-count"></span></summary>
+            <form id="import-form" class="fields">
+                <label>道渊本体世界书 <input name="world" type="file" accept=".json" required></label>
+                <label>道渊创意工坊世界书 <input name="workshop" type="file" accept=".json" required></label>
+                <button type="submit">导入</button>
+            </form>
+        </details>
+
+        <div class="columns">
+            <section class="panel composer" aria-labelledby="compose-title">
+                <div class="section-head"><span class="step">01</span><h2 id="compose-title">创建批次</h2></div>
+                <label class="stack">主题 <select id="theme"></select></label>
+                <label class="stack">搜索角色 <input id="search" placeholder="输入姓名或别名" type="search"></label>
+                <div id="role-list" class="role-list" aria-label="角色列表"></div>
+                <form id="name-form" class="inline">
+                    <input id="names" aria-label="批量添加角色名" placeholder="粘贴名单，用逗号或顿号分隔" required>
+                    <button type="submit" class="secondary">添加</button>
+                </form>
+                <div class="selected-head"><strong id="selected-count">已选 0 人</strong><button id="clear" type="button" class="text-button">清空</button></div>
+                <div id="selected"></div>
+                <label class="stack">本批补充要求（可选）<textarea id="brief" rows="2" maxlength="3000" placeholder="例如全部采用竖幅，统一使用暖色灯光"></textarea></label>
+                <div class="actions">
+                    <button id="preview" type="button" class="secondary">预览提示词</button>
+                    <button id="queue" type="button">创建批次</button>
+                </div>
+                <div id="prompts" class="prompt-list"></div>
+            </section>
+
+            <section class="panel" aria-labelledby="batch-title">
+                <div class="section-head"><span class="step">02</span><h2 id="batch-title">批次与成图</h2></div>
+                <label class="stack">批次 <select id="batch"></select></label>
+                <div id="batch-actions" class="actions" hidden>
+                    <button id="run" type="button">运行未完成任务</button>
+                    <button id="handoff" type="button" class="secondary">复制给 Codex</button>
+                </div>
+                <p id="batch-info" class="muted"></p>
+                <div id="job-list" class="job-list"></div>
+            </section>
+        </div>
+
+        <details class="panel">
+            <summary>保存自定义主题</summary>
+            <form id="theme-form" class="stack">
+                <label class="stack">名称 <input name="name" required maxlength="80" placeholder="例如雨夜巡城"></label>
+                <label class="stack">参考图 <select name="reference">
+                    <option value="none">无需参考图</option><option value="optional">可选</option><option value="required">必需</option>
+                </select></label>
+                <label class="stack">主题提示词 <textarea name="prompt" rows="7" required maxlength="30000"
+                    placeholder="可以使用 {{角色名}}、{{角色设定}}、{{世界观}}、{{主题身份}}、{{补充要求}}"></textarea></label>
+                <button type="submit">保存主题</button>
+            </form>
+        </details>
+    </main>
+</body>
+</html>

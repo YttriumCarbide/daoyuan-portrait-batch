@@ -1,0 +1,71 @@
+:root {
+    color-scheme: light;
+    --paper: #f1efe6;
+    --card: #fffcf5;
+    --ink: #202c27;
+    --muted: #58665e;
+    --line: #d7d8cb;
+    --green: #244d40;
+    --green-light: #e6eee6;
+    --red: #93402e;
+    font-family: "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--paper); color: var(--ink); }
+main { width: min(1220px, 100% - 40px); margin: 40px auto 64px; }
+.masthead { display: flex; gap: 20px; align-items: flex-end; justify-content: space-between; padding-bottom: 22px; border-bottom: 1px solid var(--green); }
+.eyebrow, .step { color: var(--red); font-size: .73rem; letter-spacing: .16em; font-weight: 800; }
+h1, h2, p { margin: 0; }
+h1 { font-family: "Songti SC", "SimSun", serif; margin: 8px 0; font-size: clamp(2.25rem, 6vw, 4.15rem); letter-spacing: .05em; }
+h2 { font-size: 1.25rem; }
+.subtitle, .muted { color: var(--muted); }
+.badge { align-self: center; background: var(--green-light); color: var(--green); border-radius: 999px; padding: 8px 14px; white-space: nowrap; font-size: .83rem; }
+#notice { min-height: 40px; padding: 9px 0; font-size: .9rem; }
+#notice.error, .warning { color: var(--red); }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 13px; padding: 19px; }
+.columns { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 15px; margin: 15px 0; }
+.columns > * { min-width: 0; }
+.section-head, .inline, .actions, .fields, .selected-head { display: flex; align-items: center; gap: 10px; }
+.section-head { margin-bottom: 17px; }
+.actions, .fields { flex-wrap: wrap; }
+.fields { margin-top: 15px; }
+.fields label { min-width: 0; flex: 1 1 220px; }
+.stack { display: grid; gap: 6px; margin: 0 0 11px; }
+details > form.stack { margin-top: 15px; }
+summary { cursor: pointer; font-weight: 700; }
+summary span { color: var(--muted); margin-left: 8px; font-size: .83rem; font-weight: 400; }
+input, select, textarea, button { font: inherit; }
+input, select, textarea { width: 100%; border: 1px solid var(--line); background: white; color: var(--ink); border-radius: 7px; padding: 8px 10px; }
+input[type=file] { padding: 7px; font-size: .85rem; }
+input[type=checkbox] { width: auto; accent-color: var(--green); }
+textarea { resize: vertical; }
+button, .download { width: max-content; border: 1px solid var(--green); border-radius: 7px; background: var(--green); color: white; padding: 8px 12px; cursor: pointer; font-weight: 650; text-decoration: none; }
+button.secondary, .download { color: var(--green); background: transparent; }
+button.text-button { color: var(--green); background: transparent; border-color: transparent; padding: 3px 0; }
+button:disabled { opacity: .48; cursor: default; }
+:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+.role-list { max-height: 215px; min-height: 52px; overflow: auto; border: 1px solid var(--line); border-radius: 7px; margin-bottom: 10px; padding: 6px 8px; }
+.role-option { display: flex; align-items: center; gap: 6px; padding: 5px 0; cursor: pointer; }
+.role-option small, .job small { color: var(--muted); }
+.selected-head { justify-content: space-between; margin: 13px 0 5px; }
+#selected { display: grid; gap: 5px; margin-bottom: 12px; }
+.selection { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 6px 8px; background: var(--green-light); border-radius: 7px; }
+.selection select { width: auto; max-width: 100%; padding: 4px; }
+.selection button { margin-left: auto; }
+.upload { color: var(--green); font-size: .84rem; text-decoration: underline; cursor: pointer; }
+.upload input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.upload:focus-within { outline: 2px solid var(--green); }
+#batch-info { font-size: .84rem; margin: 10px 0; overflow-wrap: anywhere; }
+.job-list, .prompt-list { display: grid; gap: 8px; }
+.prompt-list:not(:empty) { margin-top: 14px; }
+.job, .prompt-list details { border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.job { display: grid; gap: 6px; }
+.job img { display: block; width: auto; max-width: 100%; max-height: 260px; border-radius: 5px; }
+.job .actions { font-size: .85rem; }
+pre { font-family: inherit; font-size: .86rem; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; }
+@media (max-width: 750px) {
+    main { width: min(100% - 24px, 570px); margin-top: 20px; }
+    .columns { grid-template-columns: 1fr; }
+    .panel { padding: 14px; }
+}
