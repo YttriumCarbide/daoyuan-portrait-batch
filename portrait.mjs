@@ -8,7 +8,7 @@ import { readJson } from './src/storage.mjs';
 import { serve } from './src/server.mjs';
 
 const help = [
-    'npm start | node portrait.mjs serve [--port 8765]',
+    'npm start | node portrait.mjs serve [--port 8765] [--open]',
     'node portrait.mjs import --worlds <SillyTavern/data/default-user/worlds>',
     'node portrait.mjs import --world <本体.json> --workshop <工坊.json>',
     'node portrait.mjs library | themes | batches',
@@ -27,6 +27,7 @@ const options = Object.fromEntries(
 );
 options.role = { type: 'string', multiple: true };
 options.identity = { type: 'string', multiple: true };
+options.open = { type: 'boolean' };
 
 function required(value, label) {
     if (!value) throw new Error('请提供 ' + label + '。');
@@ -65,7 +66,7 @@ async function main() {
     const [command, first, second] = positionals;
     switch (command) {
         case 'serve':
-            return serve(values.port);
+            return serve(values.port, { open: values.open });
         case 'import': {
             const files = await bookPaths(values);
             const books = await Promise.all(files.map(path => readJson(path)));

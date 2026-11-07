@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
@@ -44,7 +45,14 @@ function readImage(value) {
     return Buffer.from(value, 'base64');
 }
 
-export function serve(input = '8765') {
+function openWorkbench(origin) {
+    execFile('rundll32.exe', ['url.dll,FileProtocolHandler', origin], { windowsHide: true }, error => {
+        if (error) console.error('请在浏览器中打开 ' + origin);
+    });
+}
+
+export function serve(input = '8765', { open = false } = {}) {
+    if (open && process.platform !== 'win32') throw new Error('--open 用于 Windows 启动文件。');
     const port = Number(input);
     if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('端口需为 1024 至 65535 的整数。');
     const host = '127.0.0.1:' + port;
@@ -121,9 +129,20 @@ export function serve(input = '8765') {
     const server = createServer((req, res) => {
         route(req, res).catch(error => json(res, 400, { error: error.message }));
     });
-    server.on('error', error => {
+    server.on('error', async error => {
+        if (open && error.code === 'EADDRINUSE') {
+            const page = await fetch(origin, { redirect: 'error', signal: AbortSignal.timeout(1500) })
+                .then(response => response.ok ? response.text() : '').catch(() => '');
+            if (page.includes('<title>道渊批量立绘</title>')) {
+                openWorkbench(origin);
+                return;
+            }
+        }
         console.error(error.code === 'EADDRINUSE' ? '端口已被占用。请打开原页面或使用 --port 指定其他端口。' : error.message);
         process.exitCode = 1;
     });
-    server.listen(port, '127.0.0.1', () => console.log('道渊批量立绘 · ' + origin));
+    server.listen(port, '127.0.0.1', () => {
+        console.log('道渊批量立绘 · ' + origin);
+        if (open) openWorkbench(origin);
+    });
 }
